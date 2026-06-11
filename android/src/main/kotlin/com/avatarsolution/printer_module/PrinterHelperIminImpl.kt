@@ -6,13 +6,20 @@ import com.imin.printer.PrinterHelper as IminPrinterHelper
 
 class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
     companion object {
-        private var paperSize = 32
-        fun formatLeftRight(msg1: String, msg2: String): String {
+        private const val PAPER_SIZE_58 = 32
+        private const val PAPER_SIZE_80 = 48
+
+        private fun getPaperSize(printSize: Int? = null): Int {
+            return if (printSize == 80) PAPER_SIZE_80 else PAPER_SIZE_58
+        }
+
+        fun formatLeftRight(msg1: String, msg2: String, printSize: Int? = null): String {
+            val paperSize = getPaperSize(printSize)
             val leftPadding = paperSize - msg1.length - msg2.length
             if (leftPadding >= 0) {
                 return msg1 + " ".repeat(leftPadding) + msg2
             } else {
-                val leftTrimmed = msg1.take(paperSize - msg2.length)
+                val leftTrimmed = msg1.take((paperSize - msg2.length).coerceAtLeast(0))
                 return leftTrimmed + msg2
             }
         }
@@ -20,8 +27,10 @@ class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
         fun formatThreeLine(
             leftText: String,
             centerText: String,
-            rightText: String
+            rightText: String,
+            printSize: Int? = null
         ) : String {
+            val paperSize = getPaperSize(printSize)
             var formattedText = leftText
             val spaceAvailable = paperSize -
                     (centerText.length + rightText.length) -
@@ -38,8 +47,8 @@ class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
             return formattedText
         }
 
-        fun strLine(): String {
-            return String(CharArray(paperSize)).replace("\u0000", "-")
+        fun strLine(printSize: Int? = null): String {
+            return String(CharArray(getPaperSize(printSize))).replace("\u0000", "-")
         }
     }
 
@@ -100,7 +109,7 @@ class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
         printerHelper.setCodeAlignment(1)
         printerHelper.setFontBold(false)
         printerHelper.setFontCharSize(0, 0, 0, 0)
-        printerHelper.printText(strLine() + "\n",null)
+        printerHelper.printText(strLine(printSize) + "\n",null)
     }
 
     override fun printLeftRight(data1: String, data2: String, printSize: Int?) {
@@ -108,7 +117,7 @@ class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
         printerHelper.setCodeAlignment(0)
         printerHelper.setFontBold(false)
         printerHelper.setFontCharSize(0, 0, 0, 0)
-        printerHelper.printText(formatLeftRight(data1, data2) + "\n",null)
+        printerHelper.printText(formatLeftRight(data1, data2, printSize) + "\n",null)
     }
 
     override fun printThreeLineText(data1: String, data2: String, data3: String, printSize: Int?) {
@@ -116,7 +125,7 @@ class PrinterHelperIminImpl(private val context: Context) : PrinterHelper {
         printerHelper.setCodeAlignment(0)
         printerHelper.setFontBold(false)
         printerHelper.setFontCharSize(0, 0, 0, 0)
-        printerHelper.printText(formatThreeLine(data1, data2, data3) + "\n",null)
+        printerHelper.printText(formatThreeLine(data1, data2, data3, printSize) + "\n",null)
     }
 
     override fun printSingleBitmap(image: Bitmap, align: Int, printSize: Int?) {
