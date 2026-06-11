@@ -18,6 +18,8 @@ class PrinterModuleBluetooth {
     _instance = instance;
   }
 
+  int _formatPrinterSize(int printSize) => printSize == 80 ? 1 : 0;
+
   Future<List<BluetoothDevice>> getBluetoothDevices() async {
     return await _bluetoothPrinter.getBondedDevices();
   }
@@ -63,9 +65,10 @@ class PrinterModuleBluetooth {
           command.align.index,
         );
       } else if (command is PrintSeparator) {
+        final formatPrinterSize = _formatPrinterSize(command.printSize);
         await _bluetoothPrinter.printNewLine();
         await _bluetoothPrinter.printCustom(
-          PrinterUtils.generateStrLine(0),
+          PrinterUtils.generateStrLine(formatPrinterSize),
           0,
           1,
         );
@@ -79,19 +82,21 @@ class PrinterModuleBluetooth {
       } else if (command is PrintSingleBitmap) {
         await _bluetoothPrinter.printImageBytes(command.imageBytes);
       } else if (command is PrintLeftRight) {
-        _bluetoothPrinter.printLeftRight(
+        final formatPrinterSize = _formatPrinterSize(command.printSize);
+        await _bluetoothPrinter.printLeftRight(
           command.leftText,
           command.rightText,
           0,
-          format: PrinterUtils.getLeftRightSpacingSize(0),
+          format: PrinterUtils.getLeftRightSpacingSize(formatPrinterSize),
         );
       } else if (command is PrintThreeLine) {
-        _bluetoothPrinter.print3Column(
+        final formatPrinterSize = _formatPrinterSize(command.printSize);
+        await _bluetoothPrinter.print3Column(
           command.leftText,
           command.centerText,
           command.rightText,
           0,
-          format: PrinterUtils.getThreeLineSpacingSize(0),
+          format: PrinterUtils.getThreeLineSpacingSize(formatPrinterSize),
         );
       }
     }
