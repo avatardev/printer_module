@@ -56,6 +56,11 @@ class MockPrinterModulePlatform
   Future<List<Map<String, dynamic>>> getUsbDevices() {
     throw UnimplementedError();
   }
+
+  @override
+  Future<bool> requestUsbPermission(String deviceId) {
+    throw UnimplementedError();
+  }
 }
 
 void main() {
