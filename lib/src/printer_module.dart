@@ -57,6 +57,10 @@ class PrinterModule {
     return PrinterModulePlatform.instance.connectUsbPrinter(deviceId);
   }
 
+  Future<bool> requestUsbPermission(String deviceId) {
+    return PrinterModulePlatform.instance.requestUsbPermission(deviceId);
+  }
+
   Future<int> connectSerialPrinter(
     String deviceAddress,
     int baudRate,

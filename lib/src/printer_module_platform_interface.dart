@@ -56,6 +56,12 @@ abstract class PrinterModulePlatform extends PlatformInterface {
     throw UnimplementedError('connectUsbPrinter() has not been implemented.');
   }
 
+  Future<bool> requestUsbPermission(String deviceId) {
+    throw UnimplementedError(
+      'requestUsbPermission() has not been implemented.',
+    );
+  }
+
   Future<int> connectSerialPrinter(
     String deviceAddress,
     int baudRate,

@@ -1,10 +1,17 @@
 package com.avatarsolution.printer_module
 
 import android.graphics.BitmapFactory
+import android.app.PendingIntent
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.hardware.usb.UsbManager
+import android.os.Build
 import android.util.Base64
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -36,8 +43,12 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       val printerTypeStr = call.argument<String>("printerType")
       val commands = call.argument<List<Map<String, Any>>>("commands")
       if (printerTypeStr != null && commands != null) {
-        processAndPrint(printerTypeStr, commands)
-        result.success(null)
+        try {
+          processAndPrint(printerTypeStr, commands)
+          result.success(null)
+        } catch (e: Exception) {
+          result.error("PRINT_ERROR", e.message ?: "Printer failed to print.", null)
+        }
       } else {
         result.error("INVALID_ARGUMENTS", "Printer type or commands are null.", null)
       }
@@ -76,6 +87,13 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Device ID is null.", null)
+      }
+    } else if(call.method == "requestUsbPermission") {
+      val deviceId = call.argument<String>("deviceId")
+      if (deviceId.isNullOrBlank()) {
+        result.error("INVALID_USB", "USB device path is empty.", null)
+      } else {
+        requestUsbPermission(deviceId, result)
       }
     } else if(call.method == "connectSerialPrinter") {
       val deviceAddress = call.argument<String>("deviceAddress")
@@ -161,6 +179,50 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     return printerHelper.connectUsbPrinter(deviceId)
   }
 
+  private fun requestUsbPermission(deviceId: String, result: Result) {
+    val currentContext = activity ?: context
+    if (currentContext == null) {
+      result.error("NO_CONTEXT", "Android context is not available.", null)
+      return
+    }
+    val usbManager = currentContext.getSystemService(Context.USB_SERVICE) as UsbManager
+    val device = usbManager.deviceList[deviceId]
+    if (device == null) {
+      result.error("USB_NOT_FOUND", "USB printer is no longer connected.", null)
+      return
+    }
+    if (usbManager.hasPermission(device)) {
+      result.success(true)
+      return
+    }
+
+    val action = "${currentContext.packageName}.PRINTER_MODULE_USB_PERMISSION"
+    val receiver = object : BroadcastReceiver() {
+      override fun onReceive(receiverContext: Context, intent: Intent) {
+        if (intent.action != action) return
+        currentContext.unregisterReceiver(this)
+        result.success(
+          intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false),
+        )
+      }
+    }
+    ContextCompat.registerReceiver(
+      currentContext,
+      receiver,
+      IntentFilter(action),
+      ContextCompat.RECEIVER_NOT_EXPORTED,
+    )
+    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+    val permissionIntent = PendingIntent.getBroadcast(
+      currentContext,
+      0,
+      Intent(action).setPackage(currentContext.packageName),
+      flags,
+    )
+    usbManager.requestPermission(device, permissionIntent)
+  }
+
   private fun connectSerialPrinter(deviceAddress: String, baudRate: Int, flowControl: Int): Int {
     val printerHelper: PrinterHelper = getPrinterHelper("universal")
     return printerHelper.connectSerialPrinter(deviceAddress, baudRate, flowControl)
@@ -183,6 +245,9 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
   private fun processAndPrint(printerType: String, commands: List<Map<String, Any>>) {
     val printerHelper: PrinterHelper = getPrinterHelper(printerType)
+    if (printerType == "universal" && printerHelper.getStatus() != 1) {
+      throw IllegalStateException("Universal printer is not connected.")
+    }
     for (command in commands) {
       when (command["type"] as? String) {
         "text" -> {

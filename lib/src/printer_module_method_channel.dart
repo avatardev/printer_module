@@ -24,18 +24,14 @@ class MethodChannelPrinterModule extends PrinterModulePlatform {
     required PrinterType printerType,
     required List<PrintCommand> commands,
   }) async {
-    try {
-      final List<Map<String, dynamic>> commandsAsJson = commands
-          .map((cmd) => cmd.toJson())
-          .toList();
+    final List<Map<String, dynamic>> commandsAsJson = commands
+        .map((cmd) => cmd.toJson())
+        .toList();
 
-      await methodChannel.invokeMethod('printReceipt', {
-        'printerType': printerType.name,
-        'commands': commandsAsJson,
-      });
-    } on PlatformException catch (e) {
-      print("Failed to print: '${e.message}'.");
-    }
+    await methodChannel.invokeMethod('printReceipt', {
+      'printerType': printerType.name,
+      'commands': commandsAsJson,
+    });
   }
 
   @override
@@ -75,6 +71,14 @@ class MethodChannelPrinterModule extends PrinterModulePlatform {
       print("Failed to connect usb printer: '${e.message}'.");
       return -99;
     }
+  }
+
+  @override
+  Future<bool> requestUsbPermission(String deviceId) async {
+    return await methodChannel.invokeMethod<bool>('requestUsbPermission', {
+          'deviceId': deviceId,
+        }) ??
+        false;
   }
 
   @override

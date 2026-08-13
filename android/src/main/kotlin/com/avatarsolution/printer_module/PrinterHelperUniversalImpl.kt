@@ -3,8 +3,6 @@ package com.avatarsolution.printer_module
 import android.content.Context
 import android.graphics.Bitmap
 import android.hardware.usb.UsbManager
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.zxing.BarcodeFormat
@@ -149,20 +147,12 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
 
     override fun connectUsbPrinter(deviceId: String): Int {
         var result = -1
-
-        val handler = Handler(Looper.getMainLooper()) { msg ->
-            result = msg.obj as Int
-            true
-        }
-
-        Thread {
+        val thread = Thread {
             try {
                 val usbManager = ContextCompat.getSystemService(context, UsbManager::class.java)
 
                 if(usbManager == null) {
-                    val message = handler.obtainMessage()
-                    message.obj = -99
-                    handler.sendMessage(message)
+                    result = -99
                     return@Thread
                 }
 
@@ -174,20 +164,19 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
                 val device = deviceList[deviceId]
 
                 if (device != null) {
-                    val io = USBAPI(context, device)
-                    val connectionResult = mPrinter.connect(io)
-                    Log.d("PrinterHelperImpl", connectionResult.toString())
-
-                    val message = handler.obtainMessage()
-                    message.obj = connectionResult
-                    handler.sendMessage(message)
+                    val io = USBAPI(ReceiverCompatContext(context), device)
+                    result = mPrinter.connect(io)
+                    Log.d("PrinterHelperImpl", result.toString())
+                } else {
+                    result = -1
                 }
             } catch (e: Exception) {
-                val message = handler.obtainMessage()
-                message.obj = -1
-                handler.sendMessage(message)
+                Log.e("PrinterHelperImpl", "USB connection failed", e)
+                result = -1
             }
-        }.start()
+        }
+        thread.start()
+        thread.join()
 
         return result
     }
@@ -195,30 +184,22 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     override fun connectSerialPrinter(deviceAddress: String, baudRate: Int, flowControl: Int): Int {
         var result = -1
 
-        val handler = Handler(Looper.getMainLooper()) { msg ->
-            result = msg.obj as Int
-            true
-        }
-
-        Thread {
+        val thread = Thread {
             try {
                 if(mPrinter.isConnect) {
                     mPrinter.disconnect()
                 }
 
                 val io = SerialAPI(File(deviceAddress), baudRate, flowControl)
-                val connectionResult = mPrinter.connect(io)
-                Log.d("PrinterHelperImpl", connectionResult.toString())
-
-                val message = handler.obtainMessage()
-                message.obj = connectionResult
-                handler.sendMessage(message)
+                result = mPrinter.connect(io)
+                Log.d("PrinterHelperImpl", result.toString())
             } catch (e: Exception) {
-                val message = handler.obtainMessage()
-                message.obj = -1
-                handler.sendMessage(message)
+                Log.e("PrinterHelperImpl", "Serial connection failed", e)
+                result = -1
             }
-        }.start()
+        }
+        thread.start()
+        thread.join()
 
         return result
     }
@@ -226,29 +207,19 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     override fun connectSocketPrinter(deviceAddress: String, devicePort: Int): Int {
         var result = -1
 
-        val handler = Handler(Looper.getMainLooper()) { msg ->
-            result = msg.obj as Int
-            true
-        }
-
-        Thread {
+        val thread = Thread {
             try {
                 val io = SocketAPI(deviceAddress, devicePort)
-                val connectionResult = mPrinter.connect(io)
-                Log.d("PrinterHelperImpl", connectionResult.toString())
-
-                // Mengirim hasil ke handler untuk UI thread
-                val message = handler.obtainMessage()
-                message.obj = connectionResult
-                handler.sendMessage(message)
+                result = mPrinter.connect(io)
+                Log.d("PrinterHelperImpl", result.toString())
 
             } catch (e: Exception) {
-                // Jika terjadi error, kirimkan -1 ke handler
-                val message = handler.obtainMessage()
-                message.obj = -1
-                handler.sendMessage(message)
+                Log.e("PrinterHelperImpl", "LAN connection failed", e)
+                result = -1
             }
-        }.start()
+        }
+        thread.start()
+        thread.join()
 
         return result
     }
@@ -376,7 +347,7 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     }
 
     override fun getStatus(): Int {
-        return 0
+        return if (mPrinter.isConnect) 1 else 0
     }
 
     override fun feedPaper(size: Int, printSize: Int?) {
