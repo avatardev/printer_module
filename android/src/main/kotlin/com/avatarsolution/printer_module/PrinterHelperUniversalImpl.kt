@@ -2,6 +2,10 @@ package com.avatarsolution.printer_module
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -313,15 +317,35 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     override fun printSingleBitmap(image: Bitmap, align: Int, printSize: Int?) {
         val thread = Thread {
             try {
-                val printWidth = if (printSize == 80) (80 - 8) * 8 else (58 - 20) * 8
-                val resizedBitmap = BitmapUtils.reSize(
+                val maxPrintWidth = if (printSize == 80) 576 else 384
+                // ESC/POS raster rows are byte-aligned (8 pixels). Sending a
+                // 100 px bitmap leaves row padding that some printer SDKs draw
+                // as a vertical line. Small logos are enlarged moderately;
+                // every image is flattened on white and aligned to 8 pixels.
+                val requestedWidth = if (image.width <= 120) {
+                    (image.width * 1.44f).toInt()
+                } else {
+                    image.width
+                }.coerceAtMost(maxPrintWidth)
+                val targetWidth = (requestedWidth / 8 * 8).coerceAtLeast(8)
+                val targetHeight =
+                    (image.height.toFloat() * targetWidth / image.width).toInt().coerceAtLeast(1)
+                val printableBitmap = Bitmap.createBitmap(
+                    targetWidth,
+                    targetHeight,
+                    Bitmap.Config.ARGB_8888
+                )
+                val canvas = Canvas(printableBitmap)
+                canvas.drawColor(Color.WHITE)
+                canvas.drawBitmap(
                     image,
-                    printWidth,
-                    image.height * printWidth / image.width
+                    null,
+                    Rect(0, 0, targetWidth, targetHeight),
+                    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
                 )
 
                 mPrinter.setAlignMode(align)
-                mPrinter.printRasterBitmap(resizedBitmap)
+                mPrinter.printRasterBitmap(printableBitmap)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -332,7 +356,16 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
 
     override fun printQr(data: String, align: Int, size: Int, printSize: Int?) {
         val thread = Thread {
-            val image = generateQRCode(data, size)
+            // iMin treats `size` as QR module size, while the universal
+            // backend generates a bitmap and therefore needs pixels. Convert
+            // legacy module-sized values into a readable thermal-print size.
+            val maxQrSize = if (printSize == 80) 320 else 240
+            val qrPixelSize = if (size <= 32) {
+                (size * 16).coerceIn(160, maxQrSize)
+            } else {
+                size.coerceIn(160, maxQrSize)
+            }
+            val image = generateQRCode(data, qrPixelSize)
             if (image != null) {
                 try {
                     mPrinter.setAlignMode(align)
