@@ -2,6 +2,7 @@ import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:printer_module/src/printer_module_bluetooth.dart';
 
 import 'print_command.dart';
+import 'printer_module_network.dart';
 import 'printer_module_platform_interface.dart';
 
 enum PrinterType { imin, telpo, bluetooth, universal }
@@ -77,6 +78,22 @@ class PrinterModule {
     return PrinterModulePlatform.instance.connectSocketPrinter(
       deviceAddress,
       devicePort,
+    );
+  }
+
+  /// Finds network printers on the local /24 subnet by probing the printer
+  /// port (9100 by default). Results can be passed to [connectSocketPrinter].
+  Future<List<NetworkPrinter>> discoverNetworkPrinters({
+    int port = PrinterModuleNetwork.defaultPort,
+    Duration timeout = PrinterModuleNetwork.defaultTimeout,
+    String? subnet,
+    int concurrency = PrinterModuleNetwork.defaultConcurrency,
+  }) {
+    return PrinterModuleNetwork.instance.discoverNetworkPrinters(
+      port: port,
+      timeout: timeout,
+      subnet: subnet,
+      concurrency: concurrency,
     );
   }
 
