@@ -23,4 +23,24 @@ void main() {
   test('getPlatformVersion', () async {
     expect(await platform.getPlatformVersion(), '42');
   });
+
+  test('getUsbDevices converts method channel values to typed maps', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          expect(methodCall.method, 'getUsbDevices');
+          return <Object?>[
+            <Object?, Object?>{
+              'deviceId': 1,
+              'deviceName': 'USB Printer',
+            },
+          ];
+        });
+
+    expect(await platform.getUsbDevices(), <Map<String, dynamic>>[
+      <String, dynamic>{
+        'deviceId': 1,
+        'deviceName': 'USB Printer',
+      },
+    ]);
+  });
 }

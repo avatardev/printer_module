@@ -118,9 +118,12 @@ class MethodChannelPrinterModule extends PrinterModulePlatform {
   @override
   Future<List<Map<String, dynamic>>> getUsbDevices() async {
     try {
-      final List<Map<String, dynamic>> devices = await methodChannel
-          .invokeMethod('getUsbDevices');
-      return devices;
+      final List<dynamic>? devices =
+          await methodChannel.invokeMethod<List<dynamic>>('getUsbDevices');
+
+      return (devices ?? const <dynamic>[])
+          .map((device) => Map<String, dynamic>.from(device as Map))
+          .toList();
     } on PlatformException catch (e) {
       print("Failed to get usb devices: '${e.message}'.");
       return [];
