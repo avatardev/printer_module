@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 
 import 'print_command.dart';
@@ -19,6 +21,28 @@ class PrinterModuleBluetooth {
   }
 
   int _formatPrinterSize(int printSize) => printSize == 80 ? 1 : 0;
+
+  // ESC/POS Bluetooth printers only support discrete character scaling. Treat
+  // point-like values up to 12 as normal and larger values as double size.
+  int _textMode(int fontSize, bool isBold) {
+    final isLarge = fontSize > 12;
+    final sizeMode = isLarge ? 0x30 : 0x00;
+    final boldMode = isBold ? 0x08 : 0x00;
+    return sizeMode | boldMode;
+  }
+
+  Future<void> _printText(PrintText command) async {
+    final mode = _textMode(command.fontSize, command.isBold);
+
+    await _bluetoothPrinter.writeBytes(
+      Uint8List.fromList([
+        0x1B, 0x21, mode, // ESC ! n: character size and bold.
+        0x1B, 0x61, command.align.index, // ESC a n: alignment.
+      ]),
+    );
+    await _bluetoothPrinter.write(command.text);
+    await _bluetoothPrinter.writeBytes(Uint8List.fromList([0x0A]));
+  }
 
   Future<List<BluetoothDevice>> getBluetoothDevices() async {
     return await _bluetoothPrinter.getBondedDevices();
@@ -55,15 +79,7 @@ class PrinterModuleBluetooth {
 
     for (final command in commands) {
       if (command is PrintText) {
-        int size = 0;
-        if (command.fontSize == 1) size = 1;
-        if (command.fontSize == 2) size = 2;
-
-        await _bluetoothPrinter.printCustom(
-          command.text,
-          size,
-          command.align.index,
-        );
+        await _printText(command);
       } else if (command is PrintSeparator) {
         final formatPrinterSize = _formatPrinterSize(command.printSize);
         await _bluetoothPrinter.printCustom(
