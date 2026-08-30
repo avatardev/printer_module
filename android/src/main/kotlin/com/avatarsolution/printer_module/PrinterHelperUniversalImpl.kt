@@ -213,6 +213,10 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
 
         val thread = Thread {
             try {
+                if(mPrinter.isConnect) {
+                    mPrinter.disconnect()
+                }
+
                 val io = SocketAPI(deviceAddress, devicePort)
                 result = mPrinter.connect(io)
                 Log.d("PrinterHelperImpl", result.toString())
@@ -242,7 +246,10 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
 
     override fun reset() {
         val thread = Thread {
-            mPrinter.resetPrinter()
+            // resetPrinter() sends the vendor-proprietary `ESC FD FD flashE`
+            // flash-reset that generic LAN printers do not implement and print
+            // literally as "²flashE"; standard ESC @ initializes instead.
+            mPrinter.init()
         }
         thread.start()
         thread.join()
@@ -380,7 +387,14 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     }
 
     override fun getStatus(): Int {
-        return if (mPrinter.isConnect) 1 else 0
+        var result = 0
+        val thread = Thread {
+            result = if (mPrinter.isConnect) 1 else 0
+        }
+        thread.start()
+        thread.join()
+
+        return result
     }
 
     override fun feedPaper(size: Int, printSize: Int?) {

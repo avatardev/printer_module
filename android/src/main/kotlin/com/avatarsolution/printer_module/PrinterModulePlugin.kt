@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -19,6 +21,8 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /** PrinterModulePlugin */
 class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
@@ -29,6 +33,15 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   private lateinit var channel : MethodChannel
   private var context: Context? = null
   private var activity: Activity? = null
+
+  /// MethodChannel handlers always run on the Android main thread, but printer
+  /// I/O (socket, serial, USB) is forbidden there (NetworkOnMainThreadException),
+  /// so every printer operation is serialized through this worker and its
+  /// result is posted back to the main thread, as MethodChannel requires.
+  private val printerExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "printer-module-io").apply { isDaemon = true }
+  }
+  private val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
@@ -43,11 +56,9 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       val printerTypeStr = call.argument<String>("printerType")
       val commands = call.argument<List<Map<String, Any>>>("commands")
       if (printerTypeStr != null && commands != null) {
-        try {
+        runOnPrinterThread(result, "PRINT_ERROR", "Printer failed to print.") {
           processAndPrint(printerTypeStr, commands)
-          result.success(null)
-        } catch (e: Exception) {
-          result.error("PRINT_ERROR", e.message ?: "Printer failed to print.", null)
+          null
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Printer type or commands are null.", null)
@@ -55,11 +66,10 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     } else if (call.method == "printerStatus") {
       val printerTypeStr = call.argument<String>("printerType")
       if (printerTypeStr != null) {
-        val status = statusPrinter(printerTypeStr)
-        if (status != -99) {
-          result.success(status)
-        } else {
-          result.error("PLUGIN_ERROR", "Plugin error.", null)
+        runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+          val status = statusPrinter(printerTypeStr)
+          if (status == -99) throw IllegalStateException("Plugin error.")
+          status
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Printer type is null.", null)
@@ -67,11 +77,10 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     } else if (call.method == "connectPrinter") {
       val printerTypeStr = call.argument<String>("printerType")
       if (printerTypeStr != null) {
-        val status = connectPrinter(printerTypeStr)
-        if (status != -99) {
-          result.success(status)
-        } else {
-          result.error("PLUGIN_ERROR", "Plugin error.", null)
+        runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+          val status = connectPrinter(printerTypeStr)
+          if (status == -99) throw IllegalStateException("Plugin error.")
+          status
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Printer type is null.", null)
@@ -79,11 +88,10 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     } else if(call.method == "connectUsbPrinter") {
       val deviceId = call.argument<String>("deviceId")
       if (deviceId != null) {
-        val status = connectUsbPrinter(deviceId)
-        if (status != -99) {
-          result.success(status)
-        } else {
-          result.error("PLUGIN_ERROR", "Plugin error.", null)
+        runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+          val status = connectUsbPrinter(deviceId)
+          if (status == -99) throw IllegalStateException("Plugin error.")
+          status
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Device ID is null.", null)
@@ -100,11 +108,10 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       val baudRate = call.argument<Int>("baudRate")
       val flowControl = call.argument<Int>("flowControl")
       if (deviceAddress != null && baudRate != null && flowControl != null) {
-        val status = connectSerialPrinter(deviceAddress, baudRate, flowControl)
-        if (status != -99) {
-          result.success(status)
-        } else {
-          result.error("PLUGIN_ERROR", "Plugin error.", null)
+        runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+          val status = connectSerialPrinter(deviceAddress, baudRate, flowControl)
+          if (status == -99) throw IllegalStateException("Plugin error.")
+          status
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Device address, baud rate, or flow control is null.", null)
@@ -113,21 +120,22 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       val deviceAddress = call.argument<String>("deviceAddress")
       val devicePort = call.argument<Int>("devicePort")
       if (deviceAddress != null && devicePort != null) {
-        val status = connectSocketPrinter(deviceAddress, devicePort)
-        if (status != -99) {
-          result.success(status)
-        } else {
-          result.error("PLUGIN_ERROR", "Plugin error.", null)
+        runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+          val status = connectSocketPrinter(deviceAddress, devicePort)
+          if (status == -99) throw IllegalStateException("Plugin error.")
+          status
         }
       } else {
         result.error("INVALID_ARGUMENTS", "Device address or device port is null.", null)
       }
     } else if(call.method == "getUsbDevices") {
-      val devices = getUsbDevices()
-      result.success(devices)
+      runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+        getUsbDevices()
+      }
     } else if(call.method == "getSerialDevices") {
-      val devices = getSerialDevices()
-      result.success(devices)
+      runOnPrinterThread(result, "PLUGIN_ERROR", "Plugin error.") {
+        getSerialDevices()
+      }
     } else {
       result.notImplemented()
     }
@@ -152,6 +160,19 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
   override fun onDetachedFromActivityForConfigChanges() {
     activity = null
+  }
+
+  private fun runOnPrinterThread(result: Result, errorCode: String, fallbackMessage: String, work: () -> Any?) {
+    printerExecutor.execute {
+      try {
+        val value = work()
+        mainHandler.post { result.success(value) }
+      } catch (e: Exception) {
+        mainHandler.post {
+          result.error(errorCode, e.message ?: fallbackMessage, null)
+        }
+      }
+    }
   }
 
   private fun getPrinterHelper(printerType: String): PrinterHelper {
