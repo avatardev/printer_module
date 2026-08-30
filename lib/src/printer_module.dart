@@ -54,10 +54,17 @@ class PrinterModule {
     return PrinterModulePlatform.instance.connectPrinter(printerType);
   }
 
+  /// Connects to a USB printer by device path or by its stable identity
+  /// "vid:pid" (hex, e.g. "0483:5743", with an optional ":serial" suffix).
+  ///
+  /// The device path (e.g. /dev/bus/usb/001/002) is reassigned by Android on
+  /// every reconnect, so persist the identity instead and pass that here.
   Future<int> connectUsbPrinter(String deviceId) {
     return PrinterModulePlatform.instance.connectUsbPrinter(deviceId);
   }
 
+  /// Requests Android USB permission for the printer addressed by
+  /// [deviceId] (device path or "vid:pid" identity, see [connectUsbPrinter]).
   Future<bool> requestUsbPermission(String deviceId) {
     return PrinterModulePlatform.instance.requestUsbPermission(deviceId);
   }
@@ -97,6 +104,9 @@ class PrinterModule {
     );
   }
 
+  /// Lists attached USB devices. Each entry contains the volatile path
+  /// (`deviceName`, `deviceId`), and `identity` ("vid:pid") which is stable
+  /// across reconnects and safe to persist for [connectUsbPrinter].
   Future<List<Map<String, dynamic>>> getUsbDevices() {
     return PrinterModulePlatform.instance.getUsbDevices();
   }

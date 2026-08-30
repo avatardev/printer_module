@@ -124,6 +124,7 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
                 deviceInfo["vendorId"] = device.vendorId
                 deviceInfo["productId"] = device.productId
                 deviceInfo["deviceName"] = device.deviceName
+                deviceInfo["identity"] = UsbDeviceResolver.identityOf(device)
                 deviceInfo["manufacturerName"] = device.manufacturerName ?: ""
                 deviceInfo["productName"] = device.productName ?: ""
 
@@ -164,8 +165,7 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
                     mPrinter.disconnect()
                 }
 
-                val deviceList = usbManager.deviceList
-                val device = deviceList[deviceId]
+                val device = UsbDeviceResolver.findDevice(usbManager, deviceId)
 
                 if (device != null) {
                     val io = USBAPI(ReceiverCompatContext(context), device)

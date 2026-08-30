@@ -207,7 +207,7 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       return
     }
     val usbManager = currentContext.getSystemService(Context.USB_SERVICE) as UsbManager
-    val device = usbManager.deviceList[deviceId]
+    val device = UsbDeviceResolver.findDevice(usbManager, deviceId)
     if (device == null) {
       result.error("USB_NOT_FOUND", "USB printer is no longer connected.", null)
       return
