@@ -66,13 +66,11 @@ class PrinterModuleBluetooth {
         );
       } else if (command is PrintSeparator) {
         final formatPrinterSize = _formatPrinterSize(command.printSize);
-        await _bluetoothPrinter.printNewLine();
         await _bluetoothPrinter.printCustom(
           PrinterUtils.generateStrLine(formatPrinterSize),
           0,
           1,
         );
-        await _bluetoothPrinter.printNewLine();
       } else if (command is PrintFeed) {
         for (int i = 0; i < command.lines; i++) {
           await _bluetoothPrinter.printNewLine();
