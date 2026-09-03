@@ -237,11 +237,9 @@ class PrinterHelperUniversalImpl(private val context: Context) : PrinterHelper {
     }
 
     override fun deInitPrinter() {
-        val thread = Thread {
-            mPrinter.disconnect()
-        }
-        thread.start()
-        thread.join()
+        // Called on the plugin's printer executor. Propagate failures to its
+        // USB lifecycle manager instead of losing them on a nested thread.
+        mPrinter.disconnect()
     }
 
     override fun reset() {

@@ -1,19 +1,12 @@
 package com.avatarsolution.printer_module
 
 import android.graphics.BitmapFactory
-import android.app.PendingIntent
 import android.app.Activity
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Bitmap
-import android.hardware.usb.UsbManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -33,24 +26,41 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   private lateinit var channel : MethodChannel
   private var context: Context? = null
   private var activity: Activity? = null
+  private var usbReadiness: UsbReadinessManager? = null
 
   /// MethodChannel handlers always run on the Android main thread, but printer
   /// I/O (socket, serial, USB) is forbidden there (NetworkOnMainThreadException),
   /// so every printer operation is serialized through this worker and its
   /// result is posted back to the main thread, as MethodChannel requires.
-  private val printerExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+  private fun newPrinterExecutor(): ExecutorService = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "printer-module-io").apply { isDaemon = true }
   }
+  private var printerExecutor = newPrinterExecutor()
   private val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+    if (printerExecutor.isShutdown) printerExecutor = newPrinterExecutor()
     context = flutterPluginBinding.applicationContext
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "printer_module")
     channel.setMethodCallHandler(this)
+    usbReadiness = UsbReadinessManager(flutterPluginBinding.applicationContext, mainHandler,
+      printerExecutor, PrinterHelperUniversalImpl(flutterPluginBinding.applicationContext))
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
-    if (call.method == "getPlatformVersion") {
+    if (usbReadiness?.isPreparing == true && call.method in setOf(
+        "connectPrinter", "connectUsbPrinter", "connectSerialPrinter", "connectSocketPrinter", "printReceipt")) {
+      result.error("USB_BUSY", "USB printer preparation is still in progress.", null)
+      return
+    }
+    if (call.method == "ensureUsbReady") {
+      val manager = usbReadiness
+      if (manager == null) {
+        result.success(mapOf("status" to "unavailable", "message" to "Modul printer belum tersedia."))
+      } else {
+        manager.ensure(call.argument<String>("deviceId") ?: "", result)
+      }
+    } else if (call.method == "getPlatformVersion") {
       result.success("Android ${android.os.Build.VERSION.RELEASE}")
     } else if (call.method == "printReceipt") {
       val printerTypeStr = call.argument<String>("printerType")
@@ -142,6 +152,10 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    usbReadiness?.close()
+    usbReadiness = null
+    printerExecutor.shutdown() // Runs the queued USB cleanup before exiting.
+    activity = null
     channel.setMethodCallHandler(null)
     context = null
   }
@@ -186,6 +200,7 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   }
 
   private fun statusPrinter(printerType: String): Int {
+    if (printerType == "universal" && usbReadiness?.invalidateStaleConnection() == true) return 0
     val printerHelper: PrinterHelper = getPrinterHelper(printerType)
     return printerHelper.getStatus()
   }
@@ -196,60 +211,23 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   }
 
   private fun connectUsbPrinter(deviceId: String): Int {
-    val printerHelper: PrinterHelper = getPrinterHelper("universal")
-    return printerHelper.connectUsbPrinter(deviceId)
+    return usbReadiness?.connectLegacy(deviceId) ?: -99
   }
 
   private fun requestUsbPermission(deviceId: String, result: Result) {
-    val currentContext = activity ?: context
-    if (currentContext == null) {
-      result.error("NO_CONTEXT", "Android context is not available.", null)
-      return
-    }
-    val usbManager = currentContext.getSystemService(Context.USB_SERVICE) as UsbManager
-    val device = UsbDeviceResolver.findDevice(usbManager, deviceId)
-    if (device == null) {
-      result.error("USB_NOT_FOUND", "USB printer is no longer connected.", null)
-      return
-    }
-    if (usbManager.hasPermission(device)) {
-      result.success(true)
-      return
-    }
-
-    val action = "${currentContext.packageName}.PRINTER_MODULE_USB_PERMISSION"
-    val receiver = object : BroadcastReceiver() {
-      override fun onReceive(receiverContext: Context, intent: Intent) {
-        if (intent.action != action) return
-        currentContext.unregisterReceiver(this)
-        result.success(
-          intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false),
-        )
-      }
-    }
-    ContextCompat.registerReceiver(
-      currentContext,
-      receiver,
-      IntentFilter(action),
-      ContextCompat.RECEIVER_NOT_EXPORTED,
-    )
-    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-    val permissionIntent = PendingIntent.getBroadcast(
-      currentContext,
-      0,
-      Intent(action).setPackage(currentContext.packageName),
-      flags,
-    )
-    usbManager.requestPermission(device, permissionIntent)
+    val manager = usbReadiness
+    if (manager == null) result.error("NO_CONTEXT", "Android context is not available.", null)
+    else manager.ensure(deviceId, result, permissionOnly = true)
   }
 
   private fun connectSerialPrinter(deviceAddress: String, baudRate: Int, flowControl: Int): Int {
+    usbReadiness?.releaseConnection()
     val printerHelper: PrinterHelper = getPrinterHelper("universal")
     return printerHelper.connectSerialPrinter(deviceAddress, baudRate, flowControl)
   }
 
   private fun connectSocketPrinter(deviceAddress: String, devicePort: Int): Int {
+    usbReadiness?.releaseConnection()
     val printerHelper: PrinterHelper = getPrinterHelper("universal")
     return printerHelper.connectSocketPrinter(deviceAddress, devicePort)
   }
@@ -266,7 +244,8 @@ class PrinterModulePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
   private fun processAndPrint(printerType: String, commands: List<Map<String, Any>>) {
     val printerHelper: PrinterHelper = getPrinterHelper(printerType)
-    if (printerType == "universal" && printerHelper.getStatus() != 1) {
+    if (printerType == "universal" &&
+        (usbReadiness?.invalidateStaleConnection() == true || printerHelper.getStatus() != 1)) {
       throw IllegalStateException("Universal printer is not connected.")
     }
     for (command in commands) {

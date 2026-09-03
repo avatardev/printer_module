@@ -13,6 +13,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   PrinterType? _printerType;
+  String? _usbIdentity;
+  bool _printing = false;
   String _platformVersion = 'Unknown';
   final _printerModulePlugin = PrinterModule();
 
@@ -55,25 +57,82 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (result != null) {
+      if (result == PrinterType.universal) {
+        final devices = await _printerModulePlugin.getUsbDevices();
+        if (!mounted) return;
+        final identities = devices
+            .map((device) => device['identity'] as String)
+            .toList();
+        if (identities.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Printer USB belum terhubung.')),
+          );
+          return;
+        }
+        final identity = await showDialog<String>(
+          context: context,
+          builder: (dialogContext) => SimpleDialog(
+            title: const Text('Pilih Printer USB'),
+            children: identities
+                .map(
+                  (identity) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(dialogContext, identity),
+                    child: Text(identity),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+        if (identity == null || !mounted) return;
+        _usbIdentity = identity; // Persist this in the application's settings.
+      } else {
+        _usbIdentity = null;
+        await _printerModulePlugin.connectPrinter(result);
+      }
       _printerType = result;
-      _printerModulePlugin.connectPrinter(result);
     }
   }
 
   void statusPrinter() async {
     if (_printerType == null) return;
     final status = await _printerModulePlugin.printerStatus(_printerType!);
+    if (!mounted) return;
     final snackBar = SnackBar(content: Text('Status Printer: $status'));
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
   void testPrinter() async {
-    if (_printerType == null) return;
-    final commands = [PrintText('Hello, World!'), PrintText('This is a test.')];
-    await _printerModulePlugin.prints(
-      printerType: _printerType!,
-      commands: commands,
-    );
+    if (_printerType == null || _printing) return;
+    setState(() => _printing = true);
+    try {
+      if (_printerType == PrinterType.universal) {
+        final readiness = await _printerModulePlugin.ensureUsbReady(
+          _usbIdentity!,
+        );
+        if (!mounted) return;
+        if (!readiness.isReady) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(readiness.message)));
+          return;
+        }
+      }
+      final commands = [
+        PrintText('Hello, World!'),
+        PrintText('This is a test.'),
+      ];
+      await _printerModulePlugin.prints(
+        printerType: _printerType!,
+        commands: commands,
+      );
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message ?? 'Cetak gagal.')));
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
   }
 
   @override
@@ -85,7 +144,7 @@ class _HomePageState extends State<HomePage> {
           Center(child: Text('Running on: $_platformVersion\n')),
           SizedBox(height: 24.0),
           ElevatedButton(
-            onPressed: connectPrinter,
+            onPressed: _printing ? null : connectPrinter,
             child: Text("Connect Printer"),
           ),
           SizedBox(height: 24.0),
@@ -94,7 +153,10 @@ class _HomePageState extends State<HomePage> {
             child: Text("Status Printer"),
           ),
           SizedBox(height: 24.0),
-          ElevatedButton(onPressed: testPrinter, child: Text("Test Printer")),
+          ElevatedButton(
+            onPressed: _printing ? null : testPrinter,
+            child: Text("Test Printer"),
+          ),
         ],
       ),
     );

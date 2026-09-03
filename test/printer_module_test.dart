@@ -58,6 +58,11 @@ class MockPrinterModulePlatform
   }
 
   @override
+  Future<UsbReadyResult> ensureUsbReady(String identity) async {
+    return const UsbReadyResult(status: UsbReadyStatus.ready, message: 'Ready');
+  }
+
+  @override
   Future<bool> requestUsbPermission(String deviceId) {
     throw UnimplementedError();
   }

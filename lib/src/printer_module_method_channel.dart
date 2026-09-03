@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'print_command.dart';
 import 'printer_module.dart';
 import 'printer_module_platform_interface.dart';
+import 'usb_ready_result.dart';
 
 /// An implementation of [PrinterModulePlatform] that uses method channels.
 class MethodChannelPrinterModule extends PrinterModulePlatform {
@@ -74,6 +75,15 @@ class MethodChannelPrinterModule extends PrinterModulePlatform {
   }
 
   @override
+  Future<UsbReadyResult> ensureUsbReady(String identity) async {
+    final result = await methodChannel.invokeMapMethod<Object?, Object?>(
+      'ensureUsbReady',
+      {'deviceId': identity},
+    );
+    return UsbReadyResult.fromMap(result ?? const {});
+  }
+
+  @override
   Future<bool> requestUsbPermission(String deviceId) async {
     return await methodChannel.invokeMethod<bool>('requestUsbPermission', {
           'deviceId': deviceId,
@@ -118,8 +128,8 @@ class MethodChannelPrinterModule extends PrinterModulePlatform {
   @override
   Future<List<Map<String, dynamic>>> getUsbDevices() async {
     try {
-      final List<dynamic>? devices =
-          await methodChannel.invokeMethod<List<dynamic>>('getUsbDevices');
+      final List<dynamic>? devices = await methodChannel
+          .invokeMethod<List<dynamic>>('getUsbDevices');
 
       return (devices ?? const <dynamic>[])
           .map((device) => Map<String, dynamic>.from(device as Map))

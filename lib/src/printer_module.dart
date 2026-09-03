@@ -4,6 +4,7 @@ import 'package:printer_module/src/printer_module_bluetooth.dart';
 import 'print_command.dart';
 import 'printer_module_network.dart';
 import 'printer_module_platform_interface.dart';
+import 'usb_ready_result.dart';
 
 enum PrinterType { imin, telpo, bluetooth, universal }
 
@@ -61,6 +62,15 @@ class PrinterModule {
   /// every reconnect, so persist the identity instead and pass that here.
   Future<int> connectUsbPrinter(String deviceId) {
     return PrinterModulePlatform.instance.connectUsbPrinter(deviceId);
+  }
+
+  /// Resolves the saved USB identity, awaits permission when needed, and
+  /// opens a fresh connection. Call once before each complete print job.
+  ///
+  /// Android only. A ready result is a snapshot: a later unplug or print
+  /// failure must still be handled. This does not print or retry a receipt.
+  Future<UsbReadyResult> ensureUsbReady(String identity) {
+    return PrinterModulePlatform.instance.ensureUsbReady(identity);
   }
 
   /// Requests Android USB permission for the printer addressed by

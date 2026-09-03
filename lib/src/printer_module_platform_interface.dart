@@ -3,6 +3,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'print_command.dart';
 import 'printer_module.dart';
 import 'printer_module_method_channel.dart';
+import 'usb_ready_result.dart';
 
 abstract class PrinterModulePlatform extends PlatformInterface {
   /// Constructs a PrinterModulePlatform.
@@ -54,6 +55,10 @@ abstract class PrinterModulePlatform extends PlatformInterface {
 
   Future<int> connectUsbPrinter(String deviceId) {
     throw UnimplementedError('connectUsbPrinter() has not been implemented.');
+  }
+
+  Future<UsbReadyResult> ensureUsbReady(String identity) {
+    throw UnimplementedError('ensureUsbReady() has not been implemented.');
   }
 
   Future<bool> requestUsbPermission(String deviceId) {

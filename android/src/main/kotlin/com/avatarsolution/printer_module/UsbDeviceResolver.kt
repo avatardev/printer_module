@@ -30,7 +30,7 @@ internal object UsbDeviceResolver {
         return usbManager.deviceList.values.firstOrNull { device ->
             device.vendorId == vid &&
                 device.productId == pid &&
-                (serial == null || device.serialNumber == serial)
+                (serial == null || (usbManager.hasPermission(device) && device.serialNumber == serial))
         }
     }
 
